@@ -1,19 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { DOMAIN_QUESTIONS } from '../../data/questions';
-import { Users, LogOut, ChevronRight, User as UserIcon, Search, Trash2, Download } from 'lucide-react';
+import {
+  Users, LogOut, ChevronRight, User as UserIcon,
+  Search, Trash2, Download, X, LayoutGrid, ArrowLeft
+} from 'lucide-react';
+import './AdminDashboard.css';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [users, setUsers] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [userAnswers, setUserAnswers] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingAnswers, setLoadingAnswers] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
 
+  const [users,          setUsers]          = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [searchTerm,     setSearchTerm]     = useState('');
+  const [selectedDomain, setSelectedDomain] = useState(null);
+  const [selectedUser,   setSelectedUser]   = useState(null);
+  const [userAnswers,    setUserAnswers]     = useState(null);
+  const [loadingAnswers, setLoadingAnswers]  = useState(false);
+  const [view,           setView]           = useState('domains');
+
+  /* ── auth guard ─────────────────────────────── */
   useEffect(() => {
     if (localStorage.getItem('sae_admin_auth') !== 'true') {
       navigate('/admin');
@@ -22,115 +30,132 @@ export default function AdminDashboard() {
     fetchUsers();
   }, [navigate]);
 
+  /* ── fetch all users once ───────────────────── */
   const fetchUsers = async () => {
     try {
       if (!db) return;
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const usersList = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setUsers(usersList.sort((a, b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)));
+      const snap  = await getDocs(collection(db, 'users'));
+      const list  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setUsers(list.sort((a, b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)));
     } catch (err) {
-      console.error("Error fetching users:", err);
+      console.error('Error fetching users:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  /* ── domain list derived from DOMAIN_QUESTIONS ─ */
+  const domains = useMemo(() => Object.entries(DOMAIN_QUESTIONS).map(([id, meta]) => ({
+    id,
+    title: meta.title,
+    count: users.filter(u => u.domains?.includes(id)).length,
+  })), [users]);
+
+  /* ── users filtered by selected domain ──────── */
+  const domainUsers = useMemo(() => {
+    if (!selectedDomain) return [];
+    return users.filter(u => u.domains?.includes(selectedDomain));
+  }, [users, selectedDomain]);
+
+  const filteredDomainUsers = useMemo(() => domainUsers.filter(u =>
+    u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.rollNo?.toLowerCase().includes(searchTerm.toLowerCase())
+  ), [domainUsers, searchTerm]);
+
+  /* ── select domain ───────────────────────────── */
+  const handleSelectDomain = (domainId) => {
+    setSelectedDomain(domainId);
+    setSelectedUser(null);
+    setUserAnswers(null);
+    setSearchTerm('');
+    setView('users');
+  };
+
+  /* ── select user → fetch answers for that domain */
   const handleSelectUser = async (user) => {
     setSelectedUser(user);
     setLoadingAnswers(true);
     setUserAnswers(null);
+    setView('detail');
 
-    if (!user.domains || !db) {
-      setLoadingAnswers(false);
-      return;
-    }
+    if (!user.domains || !db) { setLoadingAnswers(false); return; }
 
     try {
       const answersMap = {};
-      for (const domain of user.domains) {
-        const q = query(collection(db, domain), where('email', '==', user.email));
-        const domainSnap = await getDocs(q);
-        if (!domainSnap.empty) {
-          const docData = domainSnap.docs[0].data();
-          const { userId, email, autoSubmitted, submittedAt, ...flatAnswers } = docData;
-          answersMap[domain] = flatAnswers;
+      for (const domainId of user.domains) {
+        const q    = query(collection(db, domainId), where('email', '==', user.email));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          // strip metadata, keep only flat answer fields (q1, q2 …)
+          const { userId, email, autoSubmitted, submittedAt, ...flat } = snap.docs[0].data();
+          answersMap[domainId] = flat;
         }
       }
       setUserAnswers(answersMap);
     } catch (err) {
-      console.error("Error fetching answers:", err);
+      console.error('Error fetching answers:', err);
     } finally {
       setLoadingAnswers(false);
     }
   };
 
+  /* ── delete user ────────────────────────────── */
   const handleDeleteUser = async () => {
     if (!selectedUser || !db) return;
-    if (!window.confirm(`Are you sure you want to permanently delete ${selectedUser.name || selectedUser.email}?`)) return;
-    
+    if (!window.confirm(`Permanently delete ${selectedUser.name || selectedUser.email}?`)) return;
+
     setLoadingAnswers(true);
     try {
       if (selectedUser.domains) {
-        for (const domain of selectedUser.domains) {
-          const q = query(collection(db, domain), where('email', '==', selectedUser.email));
+        for (const domainId of selectedUser.domains) {
+          const q    = query(collection(db, domainId), where('email', '==', selectedUser.email));
           const snap = await getDocs(q);
-          for (const document of snap.docs) {
-            await deleteDoc(doc(db, domain, document.id));
-          }
+          for (const d of snap.docs) await deleteDoc(doc(db, domainId, d.id));
         }
       }
-      
       await deleteDoc(doc(db, 'users', selectedUser.id));
-      setUsers(users.filter(u => u.id !== selectedUser.id));
+      setUsers(prev => prev.filter(u => u.id !== selectedUser.id));
       setSelectedUser(null);
       setUserAnswers(null);
+      setView('users');
     } catch (err) {
-      console.error("Error deleting user:", err);
-      alert("Failed to delete user.");
+      console.error('Error deleting user:', err);
+      alert('Failed to delete user.');
     } finally {
       setLoadingAnswers(false);
     }
   };
 
-  const handleExportToSheets = async () => {
-    alert("Uploading to Google Sheets...");
-
-    for (const u of filteredUsers) {
+  /* ── export to sheets ────────────────────────── */
+  const handleExport = async () => {
+    alert('Uploading to Google Sheets…');
+    for (const u of users) {
       if (!u.domains) continue;
-
-      for (const domain of u.domains) {
-        let answersStr = "";
-
-        const q = query(collection(db, domain), where('email', '==', u.email));
+      for (const domainId of u.domains) {
+        let answersStr = '';
+        const q    = query(collection(db, domainId), where('email', '==', u.email));
         const snap = await getDocs(q);
-
         if (!snap.empty) {
-          const resp = snap.docs[0].data().responses;
-          answersStr = Object.values(resp).join(" | ");
+          const { userId, email, autoSubmitted, submittedAt, ...flat } = snap.docs[0].data();
+          answersStr = Object.values(flat).map(v => v ?? 'NULL').join(' | ');
         }
-
-        await fetch("https://script.google.com/macros/s/AKfycbww6Ku32V2SAQwH3KhFLYqi3DxQLPGuXJDDSm0XfHi-Qh7vSzBVetDQnLp2LCwmmxV5fw/exec", {
-          method: "POST",
-          mode: "no-cors",
-          body: JSON.stringify({
-            domain: domain,
-            name: u.name,
-            email: u.email,
-            rollNo: u.rollNo,
-            whatsapp: u.whatsapp,
-            year: u.year,
-            gender: u.gender,
-            branch: u.branch,
-            allDomains: (u.domains || []).join(" | "),
-            answers: answersStr
-          }),
-        });
+        await fetch(
+          'https://script.google.com/macros/s/AKfycbww6Ku32V2SAQwH3KhFLYqi3DxQLPGuXJDDSm0XfHi-Qh7vSzBVetDQnLp2LCwmmxV5fw/exec',
+          {
+            method: 'POST', mode: 'no-cors',
+            body: JSON.stringify({
+              domain: domainId, name: u.name, email: u.email,
+              rollNo: u.rollNo, whatsapp: u.whatsapp, year: u.year,
+              gender: u.gender, branch: u.branch,
+              allDomains: (u.domains || []).join(' | '),
+              answers: answersStr,
+            }),
+          }
+        );
       }
     }
-
-    setTimeout(() => {
-      alert("Upload completed (check Google Sheets)");
-    }, 2000);
+    setTimeout(() => alert('Upload completed — check Google Sheets.'), 2000);
   };
 
   const handleLogout = () => {
@@ -138,158 +163,268 @@ export default function AdminDashboard() {
     navigate('/admin');
   };
 
-  const filteredUsers = users.filter(u => 
-    u.email?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.rollNo?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  /* ── stats ───────────────────────────────────── */
+  const totalSubmissions  = users.length;
+  const autoSubmittedCount = users.filter(u => u.autoSubmitted).length;
+  const multiDomainCount   = users.filter(u => (u.domains?.length || 0) > 1).length;
 
+  const currentDomainMeta = selectedDomain ? DOMAIN_QUESTIONS[selectedDomain] : null;
+
+  /* ── render ──────────────────────────────────── */
   return (
-    <div className="container animate-fade-in p-6 max-w-[1400px]">
-      <div className="flex justify-between items-center mb-8 pb-5 border-b border-border-color">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-            <Users size={24} className="text-white" />
+    <div className="adm-root">
+
+      {/* ── Top Bar ── */}
+      <header className="adm-topbar">
+        <div className="adm-topbar-left">
+          <div className="adm-logo-box">
+            <LayoutGrid size={20} />
           </div>
-          <h2 className="m-0 font-display font-bold text-2xl">Admin Dashboard</h2>
+          <span className="adm-topbar-title">Admin Dashboard</span>
         </div>
-        <div className="flex gap-3">
-          <button onClick={handleExportToSheets} className="btn-secondary flex items-center gap-2 px-4 py-2.5 bg-white/5">
-            <Download size={16} /> Export to Google Sheets
+        <div className="adm-topbar-right">
+          <button onClick={handleExport} className="adm-btn adm-btn-ghost">
+            <Download size={15} /> Export Sheets
           </button>
-          <button onClick={handleLogout} className="btn-secondary flex items-center gap-2 px-4 py-2.5">
-            <LogOut size={16} /> Logout
+          <button onClick={handleLogout} className="adm-btn adm-btn-ghost">
+            <LogOut size={15} /> Logout
           </button>
+        </div>
+      </header>
+
+      {/* ── Stats Bar ── */}
+      <div className="adm-stats-bar">
+        <div className="adm-stat">
+          <span className="adm-stat-value">{totalSubmissions}</span>
+          <span className="adm-stat-label">Total Submissions</span>
+        </div>
+        <div className="adm-stat-divider" />
+        <div className="adm-stat">
+          <span className="adm-stat-value">{domains.length}</span>
+          <span className="adm-stat-label">Domains</span>
+        </div>
+        <div className="adm-stat-divider" />
+        <div className="adm-stat">
+          <span className="adm-stat-value">{autoSubmittedCount}</span>
+          <span className="adm-stat-label">Auto-Submitted</span>
+        </div>
+        <div className="adm-stat-divider" />
+        <div className="adm-stat">
+          <span className="adm-stat-value">{multiDomainCount}</span>
+          <span className="adm-stat-label">Multi-Domain</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        <div className="grid lg:grid-cols-[350px_1fr] gap-6 items-start">
-          
-          {/* Left Column - Users List */}
-          <div className="glass-panel p-6 h-[calc(100vh-160px)] overflow-y-auto">
-            <div className="relative mb-5">
-              <input 
-                type="text" 
-                className="input-field pl-10" 
-                placeholder="Search name, email, roll..." 
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              <Search size={18} className="absolute left-3 top-3.5 text-text-secondary" />
+      {/* ── Main Layout ── */}
+      <div className="adm-body">
+
+        {/* ════ SIDEBAR — always visible ════ */}
+        <aside className="adm-sidebar">
+          <p className="adm-sidebar-heading">Domains</p>
+          {loading ? (
+            <p className="adm-loading-text">Loading…</p>
+          ) : (
+            <nav className="adm-domain-nav">
+              {domains.map(d => (
+                <button
+                  key={d.id}
+                  onClick={() => handleSelectDomain(d.id)}
+                  className={`adm-domain-btn ${selectedDomain === d.id ? 'active' : ''}`}
+                >
+                  <span className="adm-domain-btn-title">{d.title}</span>
+                  <span className="adm-domain-count">{d.count}</span>
+                </button>
+              ))}
+            </nav>
+          )}
+        </aside>
+
+        {/* ════ CENTER — user list ════ */}
+        <section className={`adm-panel adm-users-panel ${view === 'domains' ? 'adm-panel-empty' : ''}`}>
+          {!selectedDomain ? (
+            <div className="adm-placeholder">
+              <LayoutGrid size={48} className="adm-placeholder-icon" />
+              <p>Select a domain to view applicants</p>
             </div>
-
-            <h3 className="text-[1.1rem] mb-4 text-text-secondary font-display font-medium">
-              Submissions ({filteredUsers.length})
-            </h3>
-            
-            {loading ? (
-              <p className="text-text-secondary">Loading users...</p>
-            ) : filteredUsers.length === 0 ? (
-              <p className="text-text-secondary">No submissions found.</p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {filteredUsers.map((u) => (
-                  <button 
-                    key={u.id}
-                    onClick={() => handleSelectUser(u)}
-                    className={`w-full text-left flex items-center justify-between p-4 rounded-lg transition-all duration-200 border ${selectedUser?.id === u.id ? 'bg-[rgba(229,9,20,0.15)] border-primary' : 'bg-black/20 border-border-color hover:border-white/30'}`}
-                  >
-                    <div className="overflow-hidden pr-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <UserIcon size={16} className="text-primary shrink-0" />
-                        <span className="font-medium text-white truncate w-[200px] inline-block align-bottom">
-                          {u.name || u.email}
-                        </span>
-                      </div>
-                      <span className="text-sm text-text-secondary">
-                        {u.branch ? `${u.branch} • ` : ''}{u.domains?.length || 0} domains apply
-                      </span>
-                    </div>
-                    <ChevronRight size={18} className="text-text-secondary shrink-0" />
-                  </button>
-                ))}
+          ) : (
+            <>
+              <div className="adm-panel-header">
+                <div>
+                  <h3 className="adm-panel-title">{currentDomainMeta?.title}</h3>
+                  <p className="adm-panel-sub">{filteredDomainUsers.length} applicant{filteredDomainUsers.length !== 1 ? 's' : ''}</p>
+                </div>
+                <div className="adm-search-wrap">
+                  <Search size={15} className="adm-search-icon" />
+                  <input
+                    type="text"
+                    className="adm-search-input"
+                    placeholder="Search…"
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                  />
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Right Column - User Details */}
-          <div className="glass-panel p-8 h-[calc(100vh-160px)] overflow-y-auto">
-            {!selectedUser ? (
-              <div className="h-full flex flex-col items-center justify-center text-text-secondary">
-                <Users size={64} className="opacity-20 mb-4" />
-                <p>Select a user to view their complete submission.</p>
-              </div>
-            ) : (
-              <div>
-                <div className="mb-8 pb-5 border-b border-border-color">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h2 className="text-3xl mb-1 font-display font-bold">{selectedUser.name || 'Applicant'}</h2>
-                      <p className="text-[1.1rem] text-primary">{selectedUser.email}</p>
-                    </div>
-                    <button onClick={handleDeleteUser} className="btn-secondary flex items-center gap-2 px-4 py-2 border-primary text-primary hover:bg-[rgba(229,9,20,0.1)]">
-                      <Trash2 size={16} /> Delete User
-                    </button>
+              <div className="adm-user-list">
+                {filteredDomainUsers.length === 0 ? (
+                  <div className="adm-placeholder">
+                    <Users size={36} className="adm-placeholder-icon" />
+                    <p>No applicants found</p>
                   </div>
-                  
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 bg-white/5 p-4 rounded-lg">
-                    <div><span className="text-text-secondary text-sm block mb-1">Roll No:</span><strong className="text-white">{selectedUser.rollNo || 'N/A'}</strong></div>
-                    <div><span className="text-text-secondary text-sm block mb-1">WhatsApp:</span><strong className="text-white">{selectedUser.whatsapp || 'N/A'}</strong></div>
-                    <div><span className="text-text-secondary text-sm block mb-1">Branch:</span><strong className="text-white">{selectedUser.branch || 'N/A'}</strong></div>
-                    <div><span className="text-text-secondary text-sm block mb-1">Year:</span><strong className="text-white">{selectedUser.year || 'N/A'}</strong></div>
-                    <div><span className="text-text-secondary text-sm block mb-1">Gender:</span><strong className="text-white">{selectedUser.gender || 'N/A'}</strong></div>
-                    <div><span className="text-text-secondary text-sm block mb-1">Submitted At:</span><strong className="text-white">{selectedUser.submittedAt ? new Date(selectedUser.submittedAt.seconds * 1000).toLocaleString() : 'Unknown'}</strong></div>
+                ) : (
+                  filteredDomainUsers.map(u => (
+                    <button
+                      key={u.id}
+                      onClick={() => handleSelectUser(u)}
+                      className={`adm-user-row ${selectedUser?.id === u.id ? 'active' : ''}`}
+                    >
+                      <div className="adm-user-avatar">
+                        {(u.name || u.email || '?')[0].toUpperCase()}
+                      </div>
+                      <div className="adm-user-info">
+                        <span className="adm-user-name">{u.name || 'Unnamed'}</span>
+                        <span className="adm-user-email">{u.email}</span>
+                        {u.branch && <span className="adm-user-meta">{u.branch} • {u.year}</span>}
+                      </div>
+                      <div className="adm-user-row-right">
+                        {u.autoSubmitted && <span className="adm-tag adm-tag-warn">Auto</span>}
+                        {(u.domains?.length || 0) > 1 && (
+                          <span className="adm-tag adm-tag-info">{u.domains.length} domains</span>
+                        )}
+                        <ChevronRight size={16} className="adm-chevron" />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </section>
+
+        {/* ════ RIGHT — detail panel ════ */}
+        <section className={`adm-panel adm-detail-panel ${view === 'detail' ? 'adm-detail-open' : ''}`}>
+          {!selectedUser ? (
+            <div className="adm-placeholder">
+              <UserIcon size={48} className="adm-placeholder-icon" />
+              <p>Select an applicant to review answers</p>
+            </div>
+          ) : (
+            <>
+              {/* Detail Header */}
+              <div className="adm-detail-header">
+                <button className="adm-back-btn adm-mobile-only" onClick={() => setView('users')}>
+                  <ArrowLeft size={16} /> Back
+                </button>
+                <div className="adm-detail-identity">
+                  <div className="adm-detail-avatar">
+                    {(selectedUser.name || selectedUser.email || '?')[0].toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 className="adm-detail-name">{selectedUser.name || 'Applicant'}</h2>
+                    <p className="adm-detail-email">{selectedUser.email}</p>
                   </div>
                 </div>
 
-                {loadingAnswers ? (
-                  <p className="text-text-secondary">Fetching their answers from the database...</p>
-                ) : !userAnswers ? (
-                  <p className="text-text-secondary">Could not load answers.</p>
-                ) : (
-                  <div>
-                    {selectedUser.domains?.map((domainId) => {
-                      const domainMeta = DOMAIN_QUESTIONS[domainId];
-                      const domainResponses = userAnswers[domainId];
+                <button onClick={handleDeleteUser} className="adm-btn adm-btn-danger" title="Delete user">
+                  <Trash2 size={15} /> Delete
+                </button>
+              </div>
 
-                      if (!domainMeta) return null;
-
-                      return (
-                        <div key={domainId} className="mb-10">
-                          <h3 className="font-display font-bold text-primary" style={{ fontSize: '1.2rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-primary)' }}></span>
-                            {domainMeta.title}
-                          </h3>
-                          
-                          {domainResponses ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                              {domainMeta.questions.map((q, idx) => {
-                                const answer = domainResponses[q.id];
-                                return (
-                                  <div key={q.id} className="admin-answer-box">
-                                    <p className="admin-answer-q">
-                                      <strong className="text-white">Q{idx + 1}: </strong> {q.text}
-                                    </p>
-                                    <div className="admin-answer-a">
-                                      {answer ? answer : <em className="text-primary opacity-80">No answer provided</em>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <p className="text-text-secondary italic">No responses found in the database for this domain.</p>
-                          )}
-                        </div>
-                      );
-                    })}
+              {/* Bio Grid */}
+              <div className="adm-bio-grid">
+                {[
+                  ['Roll No',   selectedUser.rollNo],
+                  ['WhatsApp',  selectedUser.whatsapp],
+                  ['Branch',    selectedUser.branch],
+                  ['Year',      selectedUser.year],
+                  ['Gender',    selectedUser.gender],
+                  ['Submitted', selectedUser.submittedAt
+                    ? new Date(selectedUser.submittedAt.seconds * 1000).toLocaleString()
+                    : 'Unknown'],
+                ].map(([label, value]) => (
+                  <div key={label} className="adm-bio-cell">
+                    <span className="adm-bio-label">{label}</span>
+                    <span className="adm-bio-value">{value || 'N/A'}</span>
                   </div>
+                ))}
+              </div>
+
+              {/* All domains this user applied for */}
+              {selectedUser.domains?.length > 0 && (
+                <div className="adm-domain-tags-row">
+                  <span className="adm-bio-label">Applied for:</span>
+                  {selectedUser.domains.map(d => (
+                    <span key={d} className={`adm-tag ${d === selectedDomain ? 'adm-tag-primary' : 'adm-tag-info'}`}>
+                      {DOMAIN_QUESTIONS[d]?.title || d}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Answers — only for the currently viewed domain */}
+              <div className="adm-answers-section">
+                {loadingAnswers ? (
+                  <p className="adm-loading-text">Fetching answers…</p>
+                ) : !userAnswers ? (
+                  <p className="adm-loading-text">Could not load answers.</p>
+                ) : (
+                  (() => {
+                    // Show answers only for the selected domain
+                    const domainMeta      = DOMAIN_QUESTIONS[selectedDomain];
+                    const domainResponses = userAnswers[selectedDomain];
+
+                    if (!domainMeta) return null;
+
+                    return (
+                      <div className="adm-domain-answers">
+                        <h4 className="adm-answers-domain-title">
+                          <span className="adm-dot" /> {domainMeta.title} — Answers
+                        </h4>
+
+                        {domainResponses ? (
+                          <div className="adm-qa-list">
+                            {domainMeta.questions.map((q, idx) => {
+                              const answer = domainResponses[q.id];
+                              return (
+                                <div key={q.id} className="adm-qa-item">
+                                  <p className="adm-qa-question">
+                                    <span className="adm-q-num">Q{idx + 1}</span> {q.text}
+                                  </p>
+                                  <div className="adm-qa-answer">
+                                    {answer
+                                      ? answer
+                                      : <em className="adm-no-answer">No answer provided</em>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="adm-loading-text adm-no-resp">
+                            No responses found in the database for this domain.
+                          </p>
+                        )}
+
+                        {/* If user applied to other domains too, show a note */}
+                        {selectedUser.domains?.filter(d => d !== selectedDomain).length > 0 && (
+                          <p className="adm-other-domains-note">
+                            This applicant also applied for:{' '}
+                            {selectedUser.domains
+                              .filter(d => d !== selectedDomain)
+                              .map(d => DOMAIN_QUESTIONS[d]?.title || d)
+                              .join(', ')}
+                            . Select that domain from the sidebar to view those answers.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()
                 )}
               </div>
-            )}
-          </div>
-        </div>
+            </>
+          )}
+        </section>
+
       </div>
     </div>
   );
