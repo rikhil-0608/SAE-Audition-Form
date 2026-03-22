@@ -90,58 +90,45 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleExportCSV = async () => {
-    if (filteredUsers.length === 0) return;
-    alert("Compiling CSV. Depending on the number of users, this may take a moment...");
-    
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Name,Email,Roll No,WhatsApp,Year,Gender,Branch,Submitted At,Domains Applied,Raw Answers Dump\n";
-    
+  const handleExportToSheets = async () => {
+    alert("Uploading to Google Sheets...");
+
     for (const u of filteredUsers) {
-      let domainsStr = (u.domains || []).join(" | ");
-      let answersStr = "";
-      
-      if (u.domains && db) {
-        for (const domain of u.domains) {
-          const q = query(collection(db, domain), where('email', '==', u.email));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            const resp = snap.docs[0].data().responses;
-            answersStr += `[${domain}]: ` + Object.values(resp).join(" ; ") + " | ";
-          }
+      if (!u.domains) continue;
+
+      for (const domain of u.domains) {
+        let answersStr = "";
+
+        const q = query(collection(db, domain), where('email', '==', u.email));
+        const snap = await getDocs(q);
+
+        if (!snap.empty) {
+          const resp = snap.docs[0].data().responses;
+          answersStr = Object.values(resp).join(" | ");
         }
+
+        await fetch("https://script.google.com/macros/s/AKfycbww6Ku32V2SAQwH3KhFLYqi3DxQLPGuXJDDSm0XfHi-Qh7vSzBVetDQnLp2LCwmmxV5fw/exec", {
+          method: "POST",
+          body: JSON.stringify({
+            domain: domain,
+            name: u.name,
+            email: u.email,
+            rollNo: u.rollNo,
+            whatsapp: u.whatsapp,
+            year: u.year,
+            gender: u.gender,
+            branch: u.branch,
+            allDomains: (u.domains || []).join(" | "),
+            answers: answersStr
+          }),
+          headers: {
+            "Content-Type": "application/json"
+          }
+        });
       }
-      
-      const name = u.name || "";
-      const email = u.email || "Unknown";
-      const rollNo = u.rollNo || "";
-      const whatsapp = u.whatsapp || "";
-      const year = u.year || "";
-      const gender = u.gender || "";
-      const branch = u.branch || "";
-      const date = u.submittedAt ? new Date(u.submittedAt.seconds * 1000).toLocaleString() : "Unknown";
-      
-      const eName = `"${name.replace(/"/g, '""')}"`;
-      const eEmail = `"${email.replace(/"/g, '""')}"`;
-      const eRoll = `"${rollNo.replace(/"/g, '""')}"`;
-      const eWa = `"${whatsapp.replace(/"/g, '""')}"`;
-      const eYear = `"${year.replace(/"/g, '""')}"`;
-      const eGender = `"${gender.replace(/"/g, '""')}"`;
-      const eBranch = `"${branch.replace(/"/g, '""')}"`;
-      const eDate = `"${date}"`;
-      const eDomains = `"${domainsStr.replace(/"/g, '""')}"`;
-      const eAnswers = `"${answersStr.replace(/"/g, '""')}"`;
-      
-      csvContent += `${eName},${eEmail},${eRoll},${eWa},${eYear},${eGender},${eBranch},${eDate},${eDomains},${eAnswers}\n`;
     }
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `sae_auditions_export.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+    alert("Data uploaded to Google Sheets!");
   };
 
   const handleLogout = () => {
@@ -165,8 +152,8 @@ export default function AdminDashboard() {
           <h2 className="m-0 font-display font-bold text-2xl">Admin Dashboard</h2>
         </div>
         <div className="flex gap-3">
-          <button onClick={handleExportCSV} className="btn-secondary flex items-center gap-2 px-4 py-2.5 bg-white/5">
-            <Download size={16} /> Export CSV
+          <button onClick={handleExportToSheets} className="btn-secondary flex items-center gap-2 px-4 py-2.5 bg-white/5">
+            <Download size={16} /> Export to Google Sheets
           </button>
           <button onClick={handleLogout} className="btn-secondary flex items-center gap-2 px-4 py-2.5">
             <LogOut size={16} /> Logout

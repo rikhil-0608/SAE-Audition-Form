@@ -102,11 +102,6 @@ function DomainCard({ domain, isSelected, onToggle }) {
           <h3 className="domain-card-title font-display font-bold">{domain.title}</h3>
           <p className="domain-card-desc">{domain.desc}</p>
         </div>
-        <div className="checkbox-circle">
-          {/* <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg> */}
-        </div>
       </div>
     </label>
   );

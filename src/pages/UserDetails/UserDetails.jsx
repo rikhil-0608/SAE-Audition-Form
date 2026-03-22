@@ -91,17 +91,17 @@ export default function UserDetails() {
           <div className="user-details-grid">
             <div>
               <label className="label">Full Name</label>
-              <input type="text" name="name" required className="input-field" placeholder="John Doe" value={formData.name} onChange={handleInputChange} />
+              <input type="text" name="name" required className="input-field" placeholder="Enter your Name" value={formData.name} onChange={handleInputChange} />
             </div>
 
             <div>
               <label className="label">Roll Number</label>
-              <input type="text" name="rollNo" required className="input-field" placeholder="e.g. 23XX1234" value={formData.rollNo} onChange={handleInputChange} />
+              <input type="text" name="rollNo" required className="input-field" placeholder="Enter your Roll Number" value={formData.rollNo} onChange={handleInputChange} />
             </div>
 
             <div>
               <label className="label">WhatsApp Number</label>
-              <input type="tel" name="whatsapp" required className="input-field" placeholder="+91 9876543210" value={formData.whatsapp} onChange={handleInputChange} />
+              <input type="tel" name="whatsapp" required className="input-field" placeholder="Enter your WhatsApp Number" value={formData.whatsapp} onChange={handleInputChange} />
             </div>
 
             <div className="user-details-grid-cols-2">
@@ -119,7 +119,6 @@ export default function UserDetails() {
                   <option value="" disabled>Select Gender</option>
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
-                  <option value="Other">Other</option>
                 </select>
               </div>
             </div>
