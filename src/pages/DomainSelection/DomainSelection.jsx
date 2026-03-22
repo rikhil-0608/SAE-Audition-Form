@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 import { Monitor, PenTool, Calendar, Settings, Link, ArrowRight, AlertCircle } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
 import './DomainSelection.css';
 
@@ -18,6 +19,7 @@ export default function DomainSelection() {
   const [selectedDomains, setSelectedDomains] = useState([]);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const checkSubmission = async () => {
@@ -48,7 +50,13 @@ export default function DomainSelection() {
       setError('Please select at least one domain to continue.');
       return;
     }
-    navigate('/questions', { state: { selectedDomains } });
+
+    navigate('/questions', {
+      state: {
+        selectedDomains,
+        userDetails: location.state?.userDetails
+      }
+    });
   };
 
   return (

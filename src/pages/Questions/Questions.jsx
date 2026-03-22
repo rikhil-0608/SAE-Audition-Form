@@ -15,6 +15,7 @@ export default function Questions() {
   const [error, setError] = useState('');
 
   const selectedDomains = location.state?.selectedDomains || [];
+  const userDetails = location.state?.userDetails || {};
 
   if (selectedDomains.length === 0) {
     return <Navigate to="/domains" />;
@@ -84,9 +85,6 @@ export default function Questions() {
         }, { merge: true })
       ]);
 
-      const userDoc = await getDoc(doc(db, "users", userId));
-      const userData = userDoc.data() || {};
-
       // 🔥 SEND TO GOOGLE SHEETS
       for (const domainId of selectedDomains) {
         const domainData = answers[domainId] || {};
@@ -94,13 +92,13 @@ export default function Questions() {
 
         await sendToSheets({
           domain: domainId,
-          name: userData.name || "",
+          name: userDetails.name || "",
           email: userEmail,
-          rollNo: userData.rollNo || "",
-          whatsapp: userData.whatsapp || "",
-          year: userData.year || "",
-          gender: userData.gender || "",
-          branch: userData.branch || "",
+          rollNo: userDetails.rollNo || "",
+          whatsapp: userDetails.whatsapp || "",
+          year: userDetails.year || "",
+          gender: userDetails.gender || "",
+          branch: userDetails.branch || "",
           allDomains: selectedDomains.join(" | "),
           answers: answersStr
         });
