@@ -30,6 +30,18 @@ export default function Questions() {
     }));
   };
 
+  const sendToSheets = async (data) => {
+  try {
+    await fetch("https://script.google.com/macros/s/AKfycbww6Ku32V2SAQwH3KhFLYqi3DxQLPGuXJDDSm0XfHi-Qh7vSzBVetDQnLp2LCwmmxV5fw/exec", {
+      method: "POST",
+      mode: "no-cors",
+      body: JSON.stringify(data),
+    });
+  } catch (err) {
+    console.error("Sheets error:", err);
+  }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!auth?.currentUser) {
@@ -45,13 +57,13 @@ export default function Questions() {
       const userEmail = auth.currentUser.email;
 
       if (!db) {
-        console.warn("No DB config, bypassing submit...");
         setTimeout(() => navigate('/success'), 1500);
         return;
       }
 
       const userRef = doc(db, 'users', userId);
       
+      // 🔥 SAVE TO FIREBASE
       const promises = selectedDomains.map(async (domainId) => {
         const domainData = answers[domainId] || {};
         return addDoc(collection(db, domainId), {
@@ -72,7 +84,27 @@ export default function Questions() {
         }, { merge: true })
       ]);
 
+      // 🔥 SEND TO GOOGLE SHEETS (NEW PART)
+      for (const domainId of selectedDomains) {
+        const domainData = answers[domainId] || {};
+        const answersStr = Object.values(domainData).join(" | ");
+
+        await sendToSheets({
+          domain: domainId,
+          name: userDetails?.name || "",
+          email: userEmail,
+          rollNo: userDetails?.rollNo || "",
+          whatsapp: userDetails?.whatsapp || "",
+          year: userDetails?.year || "",
+          gender: userDetails?.gender || "",
+          branch: userDetails?.branch || "",
+          allDomains: selectedDomains.join(" | "),
+          answers: answersStr
+        });
+      }
+
       navigate('/success');
+
     } catch (err) {
       console.error(err);
       setError("Failed to submit your application. Please try again.");
