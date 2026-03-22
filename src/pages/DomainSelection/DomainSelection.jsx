@@ -37,7 +37,7 @@ export default function DomainSelection() {
   }, [navigate]);
 
   const handleToggle = (id) => {
-    setSelectedDomains(prev => 
+    setSelectedDomains(prev =>
       prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]
     );
     setError('');
@@ -68,13 +68,13 @@ export default function DomainSelection() {
 
         <div className="domain-grid-main">
           <div className="domain-grid-top">
-             {availableDomains.slice(0,2).map(domain => <DomainCard key={domain.id} domain={domain} isSelected={selectedDomains.includes(domain.id)} onToggle={handleToggle} />)}
+            {availableDomains.slice(0, 2).map(domain => <DomainCard key={domain.id} domain={domain} isSelected={selectedDomains.includes(domain.id)} onToggle={handleToggle} />)}
           </div>
           <div className="domain-grid-bottom">
-             {availableDomains.slice(2).map(domain => <DomainCard key={domain.id} domain={domain} isSelected={selectedDomains.includes(domain.id)} onToggle={handleToggle} />)}
+            {availableDomains.slice(2).map(domain => <DomainCard key={domain.id} domain={domain} isSelected={selectedDomains.includes(domain.id)} onToggle={handleToggle} />)}
           </div>
         </div>
-        
+
         <div className="domain-next-container">
           <button className="btn-primary domain-next-btn" onClick={handleNext}>
             Configure Audition <ArrowRight size={20} />
@@ -89,8 +89,8 @@ function DomainCard({ domain, isSelected, onToggle }) {
   const Icon = domain.icon;
   return (
     <label className="domain-card">
-      <input 
-        type="checkbox" 
+      <input
+        type="checkbox"
         checked={isSelected}
         onChange={() => onToggle(domain.id)}
       />
@@ -103,9 +103,9 @@ function DomainCard({ domain, isSelected, onToggle }) {
           <p className="domain-card-desc">{domain.desc}</p>
         </div>
         <div className="checkbox-circle">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          {/* <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
+          </svg> */}
         </div>
       </div>
     </label>
