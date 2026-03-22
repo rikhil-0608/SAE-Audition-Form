@@ -109,6 +109,7 @@ export default function AdminDashboard() {
 
         await fetch("https://script.google.com/macros/s/AKfycbww6Ku32V2SAQwH3KhFLYqi3DxQLPGuXJDDSm0XfHi-Qh7vSzBVetDQnLp2LCwmmxV5fw/exec", {
           method: "POST",
+          mode: "no-cors",
           body: JSON.stringify({
             domain: domain,
             name: u.name,
@@ -125,7 +126,9 @@ export default function AdminDashboard() {
       }
     }
 
-    alert("Data uploaded to Google Sheets!");
+    setTimeout(() => {
+      alert("Upload completed (check Google Sheets)");
+    }, 2000);
   };
 
   const handleLogout = () => {
